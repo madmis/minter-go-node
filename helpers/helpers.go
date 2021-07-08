@@ -64,3 +64,14 @@ func IsValidBigInt(s string) bool {
 
 	return true
 }
+
+// BipToPip converts BIP to PIP (multiplies input by 1e18)
+func PipToBip(pip *big.Int) *big.Float {
+	pip2 := big.NewFloat(0).SetInt(pip)
+	p := big.NewInt(10)
+	p.Exp(p, big.NewInt(18), nil)
+	p2 := big.NewFloat(0).SetInt(p)
+	r := big.NewFloat(0).Quo(pip2, p2)
+
+	return r
+}
