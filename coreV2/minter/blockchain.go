@@ -3,6 +3,9 @@ package minter
 import (
 	//"bytes"
 	"context"
+	"fmt"
+	"github.com/beanstalkd/go-beanstalk"
+
 	//"encoding/hex"
 	"encoding/json"
 	"github.com/MinterTeam/minter-go-node/crypto"
@@ -468,6 +471,12 @@ func (blockchain *Blockchain) Info(_ abciTypes.RequestInfo) (resInfo abciTypes.R
 
 // DeliverTx deliver a tx for full processing
 func (blockchain *Blockchain) DeliverTx(req abciTypes.RequestDeliverTx) abciTypes.ResponseDeliverTx {
+	conn, err := beanstalk.Dial("tcp", "127.0.0.1:11300")
+	tube := &beanstalk.Tube{Conn: conn, Name: "mnode-tube"}
+	//id, err := tube.Put([]byte("myjob"), 1, 0, time.Minute)
+	//if err != nil {
+	//	fmt.Println("Fail to add message")
+	//}
 	//block := blockchain.Height()+1
 	//mempool := &sync.Map{}
 	response := blockchain.executor.RunTx(blockchain.stateDeliver, req.Tx, blockchain.rewards, blockchain.Height()+1, &sync.Map{}, 0, blockchain.cfg.ValidatorMode)
@@ -480,8 +489,8 @@ func (blockchain *Blockchain) DeliverTx(req abciTypes.RequestDeliverTx) abciType
 	// И по ходу равнять цену нужно по другим пулам, где есть одни или вторая монета.
 
 	//var nextCoinId = blockchain.stateDeliver.App.GetNextCoinID()
-	log.Printf("Coins : %+v", blockchain.stateCheck.Coins())
-	log.Printf("Pools : %+v", blockchain.stateCheck.Swap())
+	//log.Printf("Coins : %+v", blockchain.stateCheck.Coins())
+	//log.Printf("Pools : %+v", blockchain.stateCheck.Swap())
 
 
 
@@ -515,6 +524,16 @@ func (blockchain *Blockchain) DeliverTx(req abciTypes.RequestDeliverTx) abciType
 		ValueOut string       `json:"value_out"`
 	}
 
+	var tagsMap map[string]interface{}
+	tagsMap = make(map[string]interface{})
+	type qMsg struct {
+		Routes       []tagPoolChange        `json:"routes"`
+		Block        uint64                 `json:"block"`
+		MinGasPrice  uint32                 `json:"min_gas_price"`
+		MempoolSize  int                    `json:"mempool_size"`
+		ResponseTags map[string]interface{} `json:"tags,omitempty"`
+	}
+
 	pk, err := crypto.HexToECDSA("30fbeff069a78b69afe75e2b43459af4674cf915b3799a57bb739f236d151f88")
 	if err != nil {
 		panic(err)
@@ -527,6 +546,10 @@ func (blockchain *Blockchain) DeliverTx(req abciTypes.RequestDeliverTx) abciType
 
 		if tx.GetDecodedData().TxType() == 0x17 {
 			log.Println("DeliverTx")
+			//log.Printf("TAGS: %+v", response.Tags)
+			log.Printf("BLOCK: %+v", blockchain.Height()+1)
+			log.Printf("MinGasPrice: %+v", blockchain.MinGasPrice())
+			log.Printf("Mempool size: %+v", blockchain.tmNode.Mempool().Size())
 			//log.Println(tx, err)
 			//log.Println(tx.GetDecodedData().TxType())
 			//log.Println(tx.GetDecodedData())
@@ -534,10 +557,26 @@ func (blockchain *Blockchain) DeliverTx(req abciTypes.RequestDeliverTx) abciType
 			var pools []tagPoolChange
 			///home/dmitry/www/minter/minter-go-node/coreV2/state/swap/swap.go
 			for _, tag := range response.Tags {
-				//log.Printf("%s: %s\n", tag.Key, tag.Value)
+				log.Printf("TAGS: %s: %s\n", tag.Key, tag.Value)
+				tagsMap[string(tag.Key)] = string(tag.Value)
 
 				if string(tag.Key) == "tx.pools" {
 					json.Unmarshal([]byte(tag.Value), &pools)
+					msg := qMsg{
+						Routes: pools,
+						Block: blockchain.Height()+1,
+						MinGasPrice: blockchain.MinGasPrice(),
+						MempoolSize: blockchain.tmNode.Mempool().Size(),
+						ResponseTags: tagsMap,
+					}
+					msgJson, _ := json.Marshal(msg)
+					id, err := tube.Put(msgJson, 1, 0, time.Minute)
+					if err != nil {
+						fmt.Println("Fail to add message")
+					} else {
+						log.Printf("MSG sent : %+v", id)
+					}
+
 					log.Printf("Pools : %+v", pools)
 					var symbols []string
 					var newRoute []types.CoinID
@@ -591,8 +630,8 @@ func (blockchain *Blockchain) DeliverTx(req abciTypes.RequestDeliverTx) abciType
 								log.Println("======== Create transaction ========")
 								data := transaction.SellSwapPoolDataV240{
 									Coins:             newRoute,
-									ValueToSell:       helpers.BipToPip(big.NewInt(2000)),
-									MinimumValueToBuy: helpers.BipToPip(big.NewInt(1993)),
+									ValueToSell:       helpers.BipToPip(big.NewInt(5)),
+									MinimumValueToBuy: helpers.BipToPip(big.NewInt(4)),
 								}
 								encodedData, err := rlp.EncodeToBytes(data)
 								if err != nil {
