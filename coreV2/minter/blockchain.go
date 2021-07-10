@@ -1,8 +1,13 @@
 package minter
 
 import (
+	"bytes"
+	"io/ioutil"
+	"net/http"
+
 	//"bytes"
 	"context"
+	"encoding/hex"
 	"fmt"
 	"github.com/beanstalkd/go-beanstalk"
 
@@ -534,12 +539,14 @@ func (blockchain *Blockchain) DeliverTx(req abciTypes.RequestDeliverTx) abciType
 		ResponseTags map[string]interface{} `json:"tags,omitempty"`
 	}
 
-	pk, err := crypto.HexToECDSA("30fbeff069a78b69afe75e2b43459af4674cf915b3799a57bb739f236d151f88")
+	//pk, err := crypto.HexToECDSA("30fbeff069a78b69afe75e2b43459af4674cf915b3799a57bb739f236d151f88")
+	pk, err := crypto.HexToECDSA("e0422daaba555f43dbc9a7cc410c1a9adae5bbbbba90bc79e01340f0046d6c4d")
 	if err != nil {
 		panic(err)
 	}
 
-	address := types.HexToAddress("Mx8ab4f4f3909182e1dd5bebf239a043960e4e4557")
+	//address := types.HexToAddress("Mx8ab4f4f3909182e1dd5bebf239a043960e4e4557")
+	address := types.HexToAddress("Mx08ae486eee85c7dd83f2f6972f614965110ebb60")
 
 	tx, err := blockchain.executor.DecodeFromBytes(req.Tx)
 	if err == nil && tx != nil {
@@ -656,33 +663,33 @@ func (blockchain *Blockchain) DeliverTx(req abciTypes.RequestDeliverTx) abciType
 											log.Println(err)
 										} else {
 											log.Println(encodedTx)
-											//log.Printf("Encoded tx %s", string(encodedTx))
-											//log.Printf("Tx hash string %s", tx.Hash().String())
-											//log.Printf("Tx Sign string %s", hex.EncodeToString(tx.SignatureData))
-											//log.Printf("Tx encoded tx %s", hex.EncodeToString(encodedTx))
-											//ttx := "0x" + hex.EncodeToString(encodedTx)
-											//responseBody := bytes.NewBuffer([]byte(""))
-											//req, err := http.NewRequest(
-											//	"GET",
-											//	//"http://0.0.0.0:8843/v2/send_transaction/" + ttx,
-											//	"https://api.minter.one/v2/send_transaction/" + ttx,
-											//	responseBody,
-											//)
-											//if err != nil {
-											//	log.Println(err)
-											//} else {
-											//	req.Header.Set("Content-Type", "application/json")
-											//	client := &http.Client{}
-											//	resp, err := client.Do(req)
-											//	if err != nil {
-											//		log.Println(err)
-											//	}
-											//	defer resp.Body.Close()
-											//	log.Println("response Status:", resp.Status)
-											//	log.Println("response Headers:", resp.Header)
-											//	body, _ := ioutil.ReadAll(resp.Body)
-											//	log.Println("response Body:", string(body))
-											//}
+											log.Printf("Encoded tx %s", string(encodedTx))
+											log.Printf("Tx hash string %s", tx.Hash().String())
+											log.Printf("Tx Sign string %s", hex.EncodeToString(tx.SignatureData))
+											log.Printf("Tx encoded tx %s", hex.EncodeToString(encodedTx))
+											ttx := "0x" + hex.EncodeToString(encodedTx)
+											responseBody := bytes.NewBuffer([]byte(""))
+											req, err := http.NewRequest(
+												"GET",
+												//"http://0.0.0.0:8843/v2/send_transaction/" + ttx,
+												"https://api.minter.one/v2/send_transaction/" + ttx,
+												responseBody,
+											)
+											if err != nil {
+												log.Println(err)
+											} else {
+												req.Header.Set("Content-Type", "application/json")
+												client := &http.Client{}
+												resp, err := client.Do(req)
+												if err != nil {
+													log.Println(err)
+												}
+												defer resp.Body.Close()
+												log.Println("response Status:", resp.Status)
+												log.Println("response Headers:", resp.Header)
+												body, _ := ioutil.ReadAll(resp.Body)
+												log.Println("response Body:", string(body))
+											}
 
 
 											//log.Printf("Tx string %s", tx.String())
