@@ -1,21 +1,10 @@
 package minter
 
 import (
-	"bytes"
-	"io/ioutil"
-	"net/http"
-
 	//"bytes"
 	"context"
-	"encoding/hex"
-	"fmt"
-	"github.com/beanstalkd/go-beanstalk"
 
-	//"encoding/hex"
-	"encoding/json"
-	"github.com/MinterTeam/minter-go-node/crypto"
 	"github.com/MinterTeam/minter-go-node/helpers"
-	"github.com/MinterTeam/minter-go-node/rlp"
 	//"io/ioutil"
 	"log"
 	"math/big"
@@ -476,16 +465,7 @@ func (blockchain *Blockchain) Info(_ abciTypes.RequestInfo) (resInfo abciTypes.R
 
 // DeliverTx deliver a tx for full processing
 func (blockchain *Blockchain) DeliverTx(req abciTypes.RequestDeliverTx) abciTypes.ResponseDeliverTx {
-	conn, err := beanstalk.Dial("tcp", "127.0.0.1:11300")
-	tube := &beanstalk.Tube{Conn: conn, Name: "mnode-tube"}
-	//id, err := tube.Put([]byte("myjob"), 1, 0, time.Minute)
-	//if err != nil {
-	//	fmt.Println("Fail to add message")
-	//}
-	//block := blockchain.Height()+1
-	//mempool := &sync.Map{}
 	response := blockchain.executor.RunTx(blockchain.stateDeliver, req.Tx, blockchain.rewards, blockchain.Height()+1, &sync.Map{}, 0, blockchain.cfg.ValidatorMode)
-
 
 	// TODO: сделать минимальные суммы, которые можно тратить при объемах каждого коина
 	// получать minAmountToBuy - и потом выставлять эту суму как минимальную
@@ -497,216 +477,75 @@ func (blockchain *Blockchain) DeliverTx(req abciTypes.RequestDeliverTx) abciType
 	//log.Printf("Coins : %+v", blockchain.stateCheck.Coins())
 	//log.Printf("Pools : %+v", blockchain.stateCheck.Swap())
 
-
-
-	var c map[string]float64
-	c = make(map[string]float64)
-	c["0"] = 1000     //BIP
-	c["1902"] = 0.05  //HUB
-	c["1784"] = 5000 //RUBX
-	c["1895"] = 0.05  //MONSTERHUB
-	c["1893"] = 0.05  //LIQUIDHUB
-	c["1900"] = 0.05  //HUBCHAIN
-	c["1901"] = 0.05  //MONEHUB
-	c["1934"] = 0.08  //CAP
-	c["1942"] = 0.01 //HUBABUBA
-	c["1678"] = 12   //USDX
-	c["1993"] = 12   //USDTE
-	c["1994"] = 12  //USDCE
-	c["2024"] = 12   //MUSD
-	c["2064"] = 0.001 //BTC
-	c["2065"] = 0.01  //ETH
-	c["907"] = 1  //BIGMAC
-	c["1043"] = 1  //COUPON
-	c["1087"] = 500  //MICROB
-	c["1084"] = 0.05  //ORACUL
-
-	type tagPoolChange struct {
-		PoolID   uint32       `json:"pool_id"`
-		CoinIn   types.CoinID `json:"coin_in"`
-		ValueIn  string       `json:"value_in"`
-		CoinOut  types.CoinID `json:"coin_out"`
-		ValueOut string       `json:"value_out"`
-	}
-
-	var tagsMap map[string]interface{}
-	tagsMap = make(map[string]interface{})
-	type qMsg struct {
-		Routes       []tagPoolChange        `json:"routes"`
-		Block        uint64                 `json:"block"`
-		MinGasPrice  uint32                 `json:"min_gas_price"`
-		MempoolSize  int                    `json:"mempool_size"`
-		ResponseTags map[string]interface{} `json:"tags,omitempty"`
-	}
-
-	//pk, err := crypto.HexToECDSA("30fbeff069a78b69afe75e2b43459af4674cf915b3799a57bb739f236d151f88")
-	pk, err := crypto.HexToECDSA("e0422daaba555f43dbc9a7cc410c1a9adae5bbbbba90bc79e01340f0046d6c4d")
-	if err != nil {
-		panic(err)
-	}
-
-	//address := types.HexToAddress("Mx8ab4f4f3909182e1dd5bebf239a043960e4e4557")
-	address := types.HexToAddress("Mx08ae486eee85c7dd83f2f6972f614965110ebb60")
-
+	c := getCoinsMinToRunDeliver()
+	//wallet := getWallet();
 	tx, err := blockchain.executor.DecodeFromBytes(req.Tx)
+
 	if err == nil && tx != nil {
 
 		if tx.GetDecodedData().TxType() == 0x17 {
-			log.Println("DeliverTx")
+			log.Println("******************************* DELIVER TX *******************************")
 			//log.Printf("TAGS: %+v", response.Tags)
 			log.Printf("BLOCK: %+v", blockchain.Height()+1)
 			log.Printf("MinGasPrice: %+v", blockchain.MinGasPrice())
 			log.Printf("Mempool size: %+v", blockchain.tmNode.Mempool().Size())
-			//log.Println(tx, err)
-			//log.Println(tx.GetDecodedData().TxType())
-			//log.Println(tx.GetDecodedData())
-			//log.Println(tx.Data)
-			var pools []tagPoolChange
-			///home/dmitry/www/minter/minter-go-node/coreV2/state/swap/swap.go
-			for _, tag := range response.Tags {
-				log.Printf("TAGS: %s: %s\n", tag.Key, tag.Value)
-				tagsMap[string(tag.Key)] = string(tag.Value)
+			//tagsMap, pools := getTagsMapAndPool(response.Tags);
+			_, pools := getTagsMapAndPool(response.Tags);
+			log.Printf("Pools : %+v", pools)
 
-				if string(tag.Key) == "tx.pools" {
-					json.Unmarshal([]byte(tag.Value), &pools)
-					msg := qMsg{
-						Routes: pools,
-						Block: blockchain.Height()+1,
-						MinGasPrice: blockchain.MinGasPrice(),
-						MempoolSize: blockchain.tmNode.Mempool().Size(),
-						ResponseTags: tagsMap,
-					}
-					msgJson, _ := json.Marshal(msg)
-					id, err := tube.Put(msgJson, 1, 0, time.Minute)
-					if err != nil {
-						fmt.Println("Fail to add message")
-					} else {
-						log.Printf("MSG sent : %+v", id)
-					}
+			if len(pools) > 0 {
+				//sendMsgToQueue(blockchain, tagsMap, pools)
 
-					log.Printf("Pools : %+v", pools)
-					var symbols []string
-					var newRoute []types.CoinID
-					//var baseCoinId = types.BytesToCoinID([]byte("0"))
-					var baseCoinId = types.CoinID(0)
-					newRoute = append(newRoute, baseCoinId)
-					firstPool := pools[0]
-					lastPool := pools[len(pools)-1]
+				firstPool := pools[0]
+				lastPool := pools[len(pools)-1]
 
-					for _, pool := range pools {
-						symbols = append(symbols, blockchain.stateDeliver.Coins.GetCoin(pool.CoinIn).CSymbol.String())
+				symbols := getPoolsSymbols(blockchain, pools)
+				log.Println("Current TX Route: " + strings.Join(symbols, "=>"))
+				log.Printf(
+					"\tSell | Get : %s (%s) | %s (%s)",
+					firstPool.ValueIn,
+					helpers.PipToBip(helpers.StringToBigInt(firstPool.ValueIn)).String(),
+					lastPool.ValueOut,
+					helpers.PipToBip(helpers.StringToBigInt(lastPool.ValueOut)).String(),
+				)
 
-						if pool.PoolID == firstPool.PoolID && !pool.CoinIn.IsBaseCoin() {
-							newRoute = append(newRoute, pool.CoinIn)
-						}
-
-						if pool.PoolID == lastPool.PoolID {
-							symbols = append(symbols, blockchain.stateDeliver.Coins.GetCoin(pool.CoinOut).CSymbol.String())
-
-							if !pool.CoinOut.IsBaseCoin() && len(newRoute) < 4 {
-								newRoute = append(newRoute, pool.CoinOut)
-							}
-						} else {
-							if !pool.CoinOut.IsBaseCoin() && len(newRoute) < 4 {
-								newRoute = append(newRoute, pool.CoinOut)
-							}
-						}
-					}
-					newRoute = append(newRoute, baseCoinId)
-
-					log.Println(strings.Join(symbols, "=>"))
-					log.Printf("%v", newRoute)
+				if firstPool.CoinIn != lastPool.CoinOut {
+					newRoute := buildArbitrateRoute1(pools)
+					log.Printf("New route: %+v\n", newRoute)
 					bipValOut := helpers.PipToBip(helpers.StringToBigInt(lastPool.ValueOut))
-					log.Printf(
-						"Sell | Get : %s (%s) | %s (%s)",
-						firstPool.ValueIn,
-						helpers.PipToBip(helpers.StringToBigInt(firstPool.ValueIn)).String(),
-						lastPool.ValueOut,
-						helpers.PipToBip(helpers.StringToBigInt(lastPool.ValueOut)).String(),
-					)
 
-					if firstPool.CoinIn != lastPool.CoinOut {
-						if val, ok := c[lastPool.CoinOut.String()]; ok {
-							log.Println(val)
-							cmpRes := bipValOut.Cmp(big.NewFloat(val))
-							log.Println(cmpRes)
-							log.Printf("New route: %+v\n", newRoute)
+					if val, ok := c[lastPool.CoinOut.String()]; ok {
+						log.Println(val)
+						cmpRes := bipValOut.Cmp(big.NewFloat(val))
+						log.Println(cmpRes)
+						log.Printf("New route: %+v\n", newRoute)
 
-							if cmpRes >= 0 && len(newRoute) > 3 && len(newRoute) <= 5 {
-								//if len(newRoute) > 3 && len(newRoute) <= 5 {
-								log.Println("======== Create transaction ========")
-								data := transaction.SellSwapPoolDataV240{
-									Coins:             newRoute,
-									ValueToSell:       helpers.BipToPip(big.NewInt(5)),
-									MinimumValueToBuy: helpers.BipToPip(big.NewInt(4)),
-								}
-								encodedData, err := rlp.EncodeToBytes(data)
-								if err != nil {
-									log.Println(err)
-								} else {
-									tx := transaction.Transaction{
-										Nonce:         blockchain.stateDeliver.Accounts.GetAccount(address).Nonce + 1,
-										GasPrice:      1,
-										ChainID:       types.CurrentChainID,
-										GasCoin:       types.GetBaseCoinID(),
-										Type:          transaction.TypeSellSwapPool,
-										Data:          encodedData,
-										SignatureType: transaction.SigTypeSingle,
-									}
-
-									if err := tx.Sign(pk); err != nil {
-										log.Println(err)
-									} else {
-										encodedTx, err := rlp.EncodeToBytes(tx)
-
-										if err != nil {
-											log.Println(err)
-										} else {
-											log.Println(encodedTx)
-											log.Printf("Encoded tx %s", string(encodedTx))
-											log.Printf("Tx hash string %s", tx.Hash().String())
-											log.Printf("Tx Sign string %s", hex.EncodeToString(tx.SignatureData))
-											log.Printf("Tx encoded tx %s", hex.EncodeToString(encodedTx))
-											ttx := "0x" + hex.EncodeToString(encodedTx)
-											responseBody := bytes.NewBuffer([]byte(""))
-											req, err := http.NewRequest(
-												"GET",
-												//"http://0.0.0.0:8843/v2/send_transaction/" + ttx,
-												"https://api.minter.one/v2/send_transaction/" + ttx,
-												responseBody,
-											)
-											if err != nil {
-												log.Println(err)
-											} else {
-												req.Header.Set("Content-Type", "application/json")
-												client := &http.Client{}
-												resp, err := client.Do(req)
-												if err != nil {
-													log.Println(err)
-												}
-												defer resp.Body.Close()
-												log.Println("response Status:", resp.Status)
-												log.Println("response Headers:", resp.Header)
-												body, _ := ioutil.ReadAll(resp.Body)
-												log.Println("response Body:", string(body))
-											}
-
-
-											//log.Printf("Tx string %s", tx.String())
-											//response2 := blockchain.executor.RunTx(blockchain.stateDeliver, encodedTx, blockchain.rewards, block, mempool, 0, blockchain.cfg.ValidatorMode)
-											//log.Printf("Response  %+v\n", response2)
-											//log.Printf("Block  %s", block)
-											//for _, tag2 := range response.Tags {
-											//	log.Printf("Tags : %s | %s", string(tag2.Key), string(tag2.Value))
-											//}
-										}
-									}
-								}
-							}
+						if cmpRes >= 0 && len(newRoute) > 3 && len(newRoute) <= 5 {
+							//if len(newRoute) > 3 && len(newRoute) <= 5 {
+							//tx, err := createTransaction(
+							//	blockchain,
+							//	wallet,
+							//	1,
+							//	newRoute,
+							//	helpers.BipToPip(big.NewInt(5)),
+							//	helpers.BipToPip(big.NewInt(5)),
+							//)
+							//if err != nil {
+							//	log.Println(err)
+							//} else {
+							//	responseBytes, err := signAndSendTransaction(tx, wallet)
+							//
+							//	if err != nil {
+							//		log.Println(err)
+							//	} else {
+							//		log.Println(string(responseBytes))
+							//	}
+							//}
 						}
 					}
 				}
 			}
+			///home/dmitry/www/minter/minter-go-node/coreV2/state/swap/swap.go
 		}
 	}
 
